@@ -1,0 +1,992 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LME 헤지 시뮬레이터</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EEF1F4; --surface:#FFFFFF; --field:#F5F7F9; --ink:#18232E; --muted:#5A6875; --line:#D3DAE1;
+  --copper:#B4602A; --steel:#2C6A92; --band:rgba(44,106,146,.10); --gain:#2B7A55; --loss:#B33A3A; --lme:#1F8A4C; --lmebg:rgba(31,138,76,.13);
+  color-scheme:light; box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#141A20; --surface:#1C242C; --field:#232D37; --ink:#E6ECF1; --muted:#97A5B2; --line:#2F3A45;
+    --copper:#DB8A52; --steel:#72ACD4; --band:rgba(114,172,212,.14); --gain:#5CC08F; --loss:#E57373; --lme:#5CC08F; --lmebg:rgba(92,192,143,.18); color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141A20; --surface:#1C242C; --field:#232D37; --ink:#E6ECF1; --muted:#97A5B2; --line:#2F3A45;
+  --copper:#DB8A52; --steel:#72ACD4; --band:rgba(114,172,212,.14); --gain:#5CC08F; --loss:#E57373; --lme:#5CC08F; --lmebg:rgba(92,192,143,.18); color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  font-size:15px;line-height:1.55;font-variant-numeric:tabular-nums}
+.wrap{max-width:1200px;margin:0 auto;padding:28px 20px 48px}
+header{margin-bottom:22px}
+h1{font-size:1.7rem;font-weight:600;margin:0 0 4px;letter-spacing:-0.01em}
+header p{margin:0;color:var(--muted);max-width:66ch}
+.layout{display:grid;grid-template-columns:minmax(310px,380px) 1fr;gap:24px;align-items:start}
+@media (max-width:900px){.layout{grid-template-columns:1fr}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px}
+fieldset{border:0;margin:0 0 20px;padding:0}
+fieldset:last-child{margin-bottom:0}
+legend{font-weight:600;font-size:.95rem;margin-bottom:10px;padding:0}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.f{display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:var(--muted)}
+input[type=number],input[type=date],input[type=month],select{font:inherit;color:var(--ink);background:var(--field);
+  border:1px solid var(--line);border-radius:6px;padding:8px 10px;width:100%;min-width:0}
+input:focus-visible,select:focus-visible,.seg input:focus-visible+span,tr[tabindex]:focus-visible{outline:2px solid var(--steel);outline-offset:2px}
+.hint{font-size:.8rem;color:var(--muted);margin:2px 0 10px}
+.seg{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:7px;overflow:hidden;margin-bottom:12px}
+.seg label{position:relative;cursor:pointer}
+.seg input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.seg span{display:block;text-align:center;padding:8px 4px;font-size:.82rem;background:var(--field);color:var(--muted);height:100%}
+.seg label+label span{border-left:1px solid var(--line)}
+.seg input:checked+span{background:var(--ink);color:var(--surface);font-weight:500}
+.slider{margin-bottom:12px}
+.slider .top{display:flex;justify-content:space-between;font-size:.85rem;color:var(--muted);margin-bottom:2px}
+.slider .top b{color:var(--ink);font-weight:600}
+input[type=range]{width:100%;accent-color:var(--steel)}
+.cands{display:grid;gap:6px 8px;align-items:center}
+.cands .h{font-size:.78rem;color:var(--muted)}
+.cands input[type=radio]{width:18px;height:18px;accent-color:var(--steel);margin:0}
+.cands input{padding:7px 8px}
+
+.results{display:flex;flex-direction:column;gap:20px;min-width:0}
+.compare{display:grid;grid-template-columns:1fr 1fr;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.compare>div{padding:16px 18px}
+.compare>div+div{border-left:1px solid var(--line)}
+.compare h2{font-size:.95rem;font-weight:600;margin:0 0 8px;display:flex;align-items:center;gap:8px}
+.swatch{width:14px;height:3px;border-radius:2px;display:inline-block}
+.big{font-size:1.85rem;font-weight:600;line-height:1.15;letter-spacing:-0.01em}
+.sub{font-size:.85rem;color:var(--muted);margin-top:6px}
+.foot{grid-column:1/-1;border-top:1px solid var(--line);border-left:0!important;font-size:.9rem}
+@media (max-width:520px){.big{font-size:1.4rem}.compare>div{padding:14px}}
+.pos{color:var(--gain)} .neg{color:var(--loss)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;min-width:0}
+.card h3{font-size:1rem;font-weight:600;margin:0 0 4px}
+.card .cap{font-size:.85rem;color:var(--muted);margin:0 0 12px;max-width:72ch}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.82rem;color:var(--muted);margin-bottom:6px}
+.legend span{display:flex;align-items:center;gap:6px}
+svg{display:block;width:100%;height:auto}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-weight:500;color:var(--muted)}
+th:first-child,td:first-child{text-align:left}
+#cmp tbody tr{cursor:pointer}
+tr.sel td{background:var(--field);font-weight:600}
+.bd td:first-child{color:var(--muted)}
+.bd tr.total td{font-weight:600;border-bottom:0;color:var(--ink)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:12px}
+.stats span{display:block;font-size:.82rem;color:var(--muted)}
+.stats b{font-size:1.1rem;font-weight:600}
+
+.seg.three{grid-template-columns:repeat(3,1fr)}
+.cands{grid-template-columns:24px 1.2fr .85fr 1.15fr}
+.matbtn{font:inherit;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:6px;padding:7px 8px;width:100%;text-align:left;cursor:pointer;white-space:nowrap;font-size:.9rem}
+.matbtn.lme{color:var(--lme);font-weight:600}
+.matbtn[aria-expanded="true"]{outline:2px solid var(--steel);outline-offset:1px}
+.cal{margin-top:12px;border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--surface)}
+.cal .ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.cal .ch b{font-weight:600;font-size:.95rem}
+.cal .ch button{font:inherit;background:var(--field);border:1px solid var(--line);color:var(--ink);border-radius:6px;width:34px;height:30px;cursor:pointer}
+.cal .ch button:disabled{opacity:.35;cursor:default}
+.cal .for{font-size:.8rem;color:var(--muted);margin:0 0 8px}
+.cal .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center}
+.cal .wd{font-size:.75rem;color:var(--muted);padding:2px 0}
+.cal .d{font:inherit;font-size:.88rem;border:0;background:transparent;color:var(--ink);border-radius:6px;padding:7px 0;cursor:pointer}
+.cal .d:hover:not(:disabled){background:var(--field)}
+.cal .d:disabled{color:var(--muted);opacity:.4;cursor:default}
+.cal .d.lme{background:var(--lmebg);color:var(--lme);font-weight:600}
+.cal .d.sel{background:var(--steel);color:#fff;font-weight:600}
+.cal .d:focus-visible{outline:2px solid var(--steel)}
+.cal .key{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.78rem;color:var(--muted);margin-top:8px}
+.cal .key i{display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--lmebg);border:1px solid var(--lme);margin-right:5px;vertical-align:-1px}
+.ro{font-size:.9rem;padding:7px 8px;background:transparent;border:1px dashed var(--line);border-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.detail{font-size:.8rem;color:var(--ink);background:var(--field);border-radius:6px;padding:8px 10px;margin:2px 0 8px;line-height:1.5}
+.detail .w{color:var(--loss)}
+.linkbtn{font:inherit;font-size:.8rem;background:none;border:0;color:var(--steel);text-decoration:underline;cursor:pointer;padding:0}
+input[type=number],input[type=month],input[type=date],select,.matbtn{background:#FFF6CC;border-color:#E2C556}
+input[type=number]::placeholder{color:#8A7A3A}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) :is(input[type=number],input[type=month],input[type=date],select,.matbtn){background:#3A3320;border-color:#7D6B2C}:root:not([data-theme="light"]) input[type=number]::placeholder{color:#B8A867}}
+:root[data-theme="dark"] :is(input[type=number],input[type=month],input[type=date],select,.matbtn){background:#3A3320;border-color:#7D6B2C}
+:root[data-theme="dark"] input[type=number]::placeholder{color:#B8A867}
+.notes>span{display:block;padding-left:.9em;text-indent:-.9em;margin-bottom:2px}
+.upl{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-bottom:8px}
+.uplbtn{font-size:.85rem;font-weight:500;color:var(--surface);background:var(--steel);border-radius:6px;padding:7px 12px;cursor:pointer}
+.uplbtn{border:0;font-family:inherit}
+.uplbtn.alt{background:var(--field);color:var(--ink);border:1px solid var(--line)}
+.uplbtn:focus-within,.uplbtn:focus-visible{outline:2px solid var(--steel);outline-offset:2px}
+#evalStatus{font-size:.8rem;color:var(--muted)}
+#evalStatus .ok{color:var(--gain)} #evalStatus .bad{color:var(--loss)}
+.cand{border:1px solid var(--line);border-radius:8px;padding:8px 10px 10px;margin-bottom:8px}
+.cand.on{border-color:var(--steel);box-shadow:inset 3px 0 0 var(--steel)}
+.cr1{display:grid;grid-template-columns:22px 1fr 1fr;gap:8px;align-items:end}
+.cr1 input[type=radio]{width:18px;height:18px;accent-color:var(--steel);margin:0 0 10px}
+.cr2{display:grid;grid-template-columns:1fr .8fr 1.15fr;gap:6px;margin-top:8px}
+.l2{display:flex;flex-direction:column;gap:3px;font-size:.75rem;color:var(--muted);min-width:0}
+.l2 input,.l2 .ro,.l2 .fixed,.l2 .matbtn{font-size:.88rem;padding:7px 8px}
+.fin{font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fixed{font-size:.9rem;padding:8px 10px;background:var(--field);border:1px solid var(--line);border-radius:6px}
+.err{background:var(--field);border-left:3px solid var(--loss);padding:10px 12px;font-size:.9rem}
+.note{font-size:.8rem;color:var(--muted);line-height:1.6;max-width:80ch}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>비철금속(LME) 헤지 시뮬레이터</h1>
+    <p>실물 가격이 Cash, 3M 또는 월평균으로 먼저 고정되고 반대쪽 실물 거래가 특정 월 평균가로 정해지는 경우, 헤지 패키지를 걸었을 때 무엇이 남고 그 사이 현금이 얼마나 필요한지 보여줍니다.</p>
+  </header>
+
+  <div class="layout">
+    <form class="panel" id="inputs" onsubmit="return false">
+      <fieldset>
+        <legend>실물 거래</legend>
+        <div class="seg" style="grid-template-columns:1fr 1fr" role="radiogroup" aria-label="실물 거래 방향">
+          <label><input type="radio" name="dir" value="buy" checked><span>실물 Buy</span></label>
+          <label><input type="radio" name="dir" value="sell"><span>실물 Sell</span></label>
+        </div>
+        <div class="row">
+          <label class="f">품목
+            <select id="metal">
+              <option value="CU" selected>전기동 (25mt/lot)</option>
+              <option value="AL">알루미늄 (25mt/lot)</option>
+              <option value="ZN">아연 (25mt/lot)</option>
+              <option value="PB">납 (25mt/lot)</option>
+              <option value="NI">니켈 (6mt/lot)</option>
+              <option value="SN">주석 (5mt/lot)</option>
+            </select>
+          </label>
+          <label class="f">실물 중량 (mt)<input type="number" id="Q" value="214.064" min="0" step="0.001"></label>
+        </div>
+        <div class="row">
+          <label class="f">lot 처리
+            <select id="round">
+              <option value="floor" selected>내림</option>
+              <option value="ceil">올림</option>
+              <option value="custom">임의</option>
+            </select>
+          </label>
+          <div class="f"><span>헤지 lot 수</span>
+            <div class="fixed" id="lotShow" aria-live="polite"></div>
+            <select id="customLots" aria-label="헤지 lot 수"></select>
+          </div>
+        </div>
+        <p class="hint" id="lotHint"></p>
+        <div class="row">
+          <label class="f">원/USD 환율<input type="number" id="fx" value="1400" min="1" step="0.1"></label>
+          <div></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend id="lg1">매입가 정보 (선물 Sell)</legend>
+        <div class="upl">
+          <button type="button" class="uplbtn hidden" id="gmailBtn">Gmail에서 가져오기</button>
+          <label class="uplbtn alt">커브 파일 올리기 (.xlsx)<input type="file" id="evalFile" accept=".xlsx,.xls" hidden></label>
+          <span id="evalStatus" aria-live="polite"></span>
+        </div>
+        <p class="hint hidden" id="curveInfo"></p>
+        <div class="seg" style="grid-template-columns:1fr 1fr" role="radiogroup" aria-label="매입가 기준">
+          <label><input type="radio" name="basis" value="cash" checked><span>Cash</span></label>
+          <label><input type="radio" name="basis" value="avg"><span>월평균</span></label>
+        </div>
+        <div class="row">
+          <div class="f"><span>가격결정일 (헤지 체결일)</span><button type="button" class="matbtn" id="pbtn" aria-expanded="false"></button></div>
+          <label class="f"><span id="P0Label">매입가 (USD/mt)</span><input type="number" id="P0" min="1" step="0.01"></label>
+        </div>
+        <div class="cal hidden" id="pcal" role="dialog" aria-label="가격결정일 선택 달력"></div>
+        <div class="row hidden" id="rRow">
+          <div class="f"><span>기준일 (임의)</span><button type="button" class="matbtn" id="rbtn" aria-expanded="false"></button></div>
+          <div></div>
+        </div>
+        <div class="cal hidden" id="rcal" role="dialog" aria-label="기준일 선택 달력"></div>
+        <p class="hint" id="refHint"></p>
+        <div class="row">
+          <div class="f"><span id="s1Label">Sell 스프레드 (USD/mt)</span><div class="fixed" id="ssShow"></div></div>
+          <div class="f"><span>최종가격 (USD/mt)</span><div class="fixed" id="finalShow" style="font-weight:600;color:var(--ink)"></div></div>
+        </div>
+        <div class="detail" id="ssDetail"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend id="lg2">판매월 후보와 만기 (선물 Buy)</legend>
+        <div class="seg" style="grid-template-columns:1fr 1fr" role="radiogroup" aria-label="후보 가격 기준">
+          <label><input type="radio" name="sbasis" value="cash"><span>Cash</span></label>
+          <label><input type="radio" name="sbasis" value="avg" checked><span>월평균</span></label>
+        </div>
+        <div id="cands">
+          <div class="cand" id="cand0">
+            <div class="cr1"><input type="radio" name="sel" value="0" checked aria-label="후보 1 선택"><label class="l2 mlab">Cash 평균가 월<input type="month" id="m0"></label><div class="l2 slab hidden"><span class="sdl">판매 가격결정일</span><button type="button" class="matbtn" id="sb0" aria-expanded="false"></button></div><label class="l2">만기<button type="button" class="matbtn" id="mat0" data-i="0" aria-expanded="false"></button></label></div>
+            <div class="cr2"><label class="l2"><span class="avl">평균가 (USD/mt)</span><input title="비워두면 시나리오 경로 가격을 씁니다" type="number" id="a0" step="0.01" min="0"></label><div class="l2"><span class="s2lbl">Buy 스프레드</span><div class="ro" id="b0"></div></div><div class="l2">최종가<div class="fixed fin" id="fin0"></div></div></div>
+          </div>
+          <div class="cand" id="cand1">
+            <div class="cr1"><input type="radio" name="sel" value="1" aria-label="후보 2 선택"><label class="l2 mlab">Cash 평균가 월<input type="month" id="m1"></label><div class="l2 slab hidden"><span class="sdl">판매 가격결정일</span><button type="button" class="matbtn" id="sb1" aria-expanded="false"></button></div><label class="l2">만기<button type="button" class="matbtn" id="mat1" data-i="1" aria-expanded="false"></button></label></div>
+            <div class="cr2"><label class="l2"><span class="avl">평균가 (USD/mt)</span><input title="비워두면 시나리오 경로 가격을 씁니다" type="number" id="a1" step="0.01" min="0"></label><div class="l2"><span class="s2lbl">Buy 스프레드</span><div class="ro" id="b1"></div></div><div class="l2">최종가<div class="fixed fin" id="fin1"></div></div></div>
+          </div>
+          <div class="cand" id="cand2">
+            <div class="cr1"><input type="radio" name="sel" value="2" aria-label="후보 3 선택"><label class="l2 mlab">Cash 평균가 월<input type="month" id="m2"></label><div class="l2 slab hidden"><span class="sdl">판매 가격결정일</span><button type="button" class="matbtn" id="sb2" aria-expanded="false"></button></div><label class="l2">만기<button type="button" class="matbtn" id="mat2" data-i="2" aria-expanded="false"></button></label></div>
+            <div class="cr2"><label class="l2"><span class="avl">평균가 (USD/mt)</span><input title="비워두면 시나리오 경로 가격을 씁니다" type="number" id="a2" step="0.01" min="0"></label><div class="l2"><span class="s2lbl">Buy 스프레드</span><div class="ro" id="b2"></div></div><div class="l2">최종가<div class="fixed fin" id="fin2"></div></div></div>
+          </div>
+        </div>
+        <div class="cal hidden" id="cal" role="dialog" aria-label="만기 선택 달력"></div>
+        <div class="detail" id="sbDetail"></div>
+        <p class="hint notes hidden"><span id="n1"></span><span id="n2"></span><span id="n3"></span><i id="s2Name" hidden></i></p>
+      </fieldset>
+
+      <fieldset>
+        <legend>증거금</legend>
+        <div class="fixed">개시증거금: 명목가의 10% (고정)</div>
+      </fieldset>
+
+      <fieldset>
+        <legend>가격 경로 시나리오</legend>
+        <div class="seg" role="radiogroup" aria-label="경로 형태">
+          <label><input type="radio" name="shape" value="line"><span>직선</span></label>
+          <label><input type="radio" name="shape" value="up" checked><span>급등 후 반락</span></label>
+          <label><input type="radio" name="shape" value="down"><span>급락 후 회복</span></label>
+          <label><input type="radio" name="shape" value="late"><span>횡보 후 급변</span></label>
+        </div>
+        <div class="slider">
+          <div class="top"><label for="E">기간 말 가격 변동</label><b id="EOut"></b></div>
+          <input type="range" id="E" min="-30" max="30" step="1" value="4">
+        </div>
+        <div class="slider" id="swingWrap">
+          <div class="top"><label for="S">중간 변동폭</label><b id="SOut"></b></div>
+          <input type="range" id="S" min="0" max="30" step="1" value="10">
+        </div>
+        <p class="hint">기간 말은 가장 늦은 후보월의 말일입니다.</p>
+      </fieldset>
+    </form>
+
+    <section class="results" aria-live="polite">
+      <div id="errBox" class="err hidden"></div>
+
+      <div class="compare">
+        <div>
+          <h2><span class="swatch" style="background:var(--copper)"></span>헤지 안 함</h2>
+          <div class="big" id="unTot"></div>
+          <div class="sub" id="unSub" style="white-space:pre-line"></div>
+        </div>
+        <div>
+          <h2><span class="swatch" style="background:var(--steel)"></span>헤지 패키지</h2>
+          <div class="big" id="hTot"></div>
+          <div class="sub" id="hBreak" style="color:var(--ink)"></div>
+          <div class="sub" id="hSub"></div>
+        </div>
+        <div class="foot" id="foot"></div>
+      </div>
+
+      <div class="card">
+        <h3 id="cmpTitle">판매월별 결과 비교</h3>
+        <p class="cap" id="cmpCap">같은 가격 경로에서 판매월만 바꿨을 때입니다. 행을 누르면 그 판매월로 아래 분석이 바뀝니다.</p>
+        <div class="scroll"><table id="cmp"></table></div>
+      </div>
+
+      <div class="card">
+        <h3>손익 분해</h3>
+        <p class="cap" id="bdCap"></p>
+        <div class="scroll"><table class="bd" id="bd"></table></div>
+      </div>
+
+      <div class="card">
+        <h3>가격 경로</h3>
+        <p class="cap">음영은 선택한 후보월의 평균가 산출 기간, 굵은 선은 그 월평균가, 세로 점선은 만기입니다.</p>
+        <div class="legend">
+          <span><span class="swatch" style="background:var(--copper)"></span>LME Cash 경로</span>
+          <span><span class="swatch" style="background:var(--muted)"></span><span id="p0Leg">매입가</span></span>
+          <span><span class="swatch" style="background:var(--steel)"></span>월평균가</span>
+        </div>
+        <svg id="priceChart" viewBox="0 0 640 250" role="img" aria-label="가격 경로 그래프"></svg>
+      </div>
+
+      <div class="card">
+        <h3>증거금 현금흐름</h3>
+        <p class="cap" id="mgCap">가격이 오르면 실물은 평가이익이지만 아직 팔지 않았으므로 현금이 없고, 선물 매도 손실은 그때그때 현금으로 납입해야 합니다.</p>
+        <svg id="marginChart" viewBox="0 0 640 220" role="img" aria-label="필요 현금 그래프"></svg>
+        <div class="stats">
+          <div><span>개시증거금</span><b id="stIM"></b></div>
+          <div><span>최대 필요 현금</span><b id="stPeak"></b></div>
+          <div><span>최대 시점</span><b id="stDate"></b></div>
+        </div>
+      </div>
+
+      <p class="note">시뮬레이션이며 실제 결과와 다를 수 있습니다. 영업일은 주말만 제외했고 영국 공휴일은 반영하지 않았습니다. 월평균가는 시나리오 경로의 영업일 Cash 단순평균입니다. 증거금 경로는 가격 변동분만 반영하며, 스프레드 손익은 만기에 실현된다고 봅니다. 평가이익은 인출하지 않는다고 가정하고, 수수료는 반영하지 않았습니다.</p>
+    </section>
+  </div>
+</div>
+
+<script>
+let CURVE = {"CU":{"cash":"2026-10-29","m3":"2027-01-27","pts":[["2026-10-29",14670.37],["2026-10-30",14668.12],["2026-11-02",14655.37],["2026-11-03",14655.5],["2026-11-04",14651.5],["2026-11-05",14643.1],["2026-11-06",14634.7],["2026-11-09",14626.3],["2026-11-10",14617.9],["2026-11-12",14609.5],["2026-11-13",14600.5],["2026-11-16",14591.5],["2026-11-17",14582.5],["2026-11-18",14570.5],["2026-11-19",14561.5],["2026-11-20",14555.83],["2026-11-23",14550.17],["2026-11-24",14544.5],["2026-11-25",14543.5],["2026-11-27",14543.7],["2026-11-30",14544.01],["2026-12-01",14544.11],["2026-12-02",14543.11],["2026-12-03",14542.11],["2026-12-04",14541.11],["2026-12-07",14540.11],["2026-12-08",14539.11],["2026-12-09",14536.11],["2026-12-10",14536.11],["2026-12-11",14535.7],["2026-12-14",14535.29],["2026-12-15",14534.87],["2026-12-16",14534.46],["2026-12-17",14515.46],["2026-12-18",14496.46],["2026-12-21",14477.46],["2026-12-22",14478.03],["2026-12-23",14478.6],["2026-12-24",14479.17],["2026-12-29",14485],["2026-12-30",14485.06],["2026-12-31",14485.13],["2027-01-04",14485.38],["2027-01-05",14485.44],["2027-01-06",14485.5],["2027-01-07",14486.75],["2027-01-08",14487.25],["2027-01-11",14489.5],["2027-01-12",14490.25],["2027-01-13",14491.75],["2027-01-14",14493.25],["2027-01-15",14494.75],["2027-01-19",14493.75],["2027-01-20",14493.75],["2027-01-21",14478],["2027-01-22",14471.75],["2027-01-25",14473.25],["2027-01-26",14473.75],["2027-01-27",14474.5],["2027-02-17",14486],["2027-03-17",14487.5],["2027-04-21",14492.5],["2027-05-19",14497.5],["2027-06-16",14501.5],["2027-07-21",14506.5],["2027-08-18",14510],["2027-09-15",14511.25],["2027-10-20",14512.5],["2027-11-17",14509.5],["2027-12-15",14505.5],["2028-01-19",14507.5],["2028-02-16",14510.5],["2028-03-15",14515.5],["2028-04-19",14521],["2028-05-17",14526.5],["2028-06-21",14532],["2028-07-19",14538]]},"AL":{"cash":"2026-10-29","m3":"2027-01-27","pts":[["2026-10-29",3114.64],["2026-10-30",3115.79],["2026-11-02",3118.68],["2026-11-03",3119.64],["2026-11-04",3120.14],["2026-11-05",3120.64],["2026-11-06",3121.14],["2026-11-09",3122.64],["2026-11-10",3123.14],["2026-11-12",3124.14],["2026-11-13",3124.64],["2026-11-16",3126.52],["2026-11-17",3127.14],["2026-11-18",3127.64],["2026-11-19",3119.64],["2026-11-20",3114.64],["2026-11-23",3114.64],["2026-11-24",3114.64],["2026-11-25",3114.64],["2026-11-27",3115.75],["2026-11-30",3117.42],["2026-12-01",3117.97],["2026-12-02",3118.53],["2026-12-03",3119.08],["2026-12-04",3119.64],["2026-12-07",3120.39],["2026-12-08",3120.64],["2026-12-09",3119.64],["2026-12-10",3118.75],["2026-12-11",3117.86],["2026-12-14",3116.97],["2026-12-15",3116.08],["2026-12-16",3115.19],["2026-12-17",3104.19],["2026-12-18",3101.77],["2026-12-21",3099.36],["2026-12-22",3096.94],["2026-12-23",3097.19],["2026-12-24",3097.84],["2026-12-29",3101.08],["2026-12-30",3101.73],["2026-12-31",3102.53],["2027-01-04",3105.73],["2027-01-05",3106.73],["2027-01-06",3107.73],["2027-01-07",3108.73],["2027-01-08",3107.64],["2027-01-11",3107.64],["2027-01-12",3107.64],["2027-01-13",3105.64],["2027-01-14",3105.14],["2027-01-15",3104.64],["2027-01-19",3102.53],["2027-01-20",3097.53],["2027-01-21",3089.75],["2027-01-22",3087.75],["2027-01-25",3087.5],["2027-01-26",3087.25],["2027-01-27",3087],["2027-02-17",3082.17],["2027-03-17",3069.67],["2027-04-21",3059.67],["2027-05-19",3050.75],["2027-06-16",3042],["2027-07-21",3031],["2027-08-18",3021],["2027-09-15",3013.19],["2027-10-20",3005.69],["2027-11-17",3000.69],["2027-12-15",2990.19],["2028-01-19",2979.44],["2028-02-16",2968.69],["2028-03-15",2960.69],["2028-04-19",2955.19],["2028-05-17",2952.69],["2028-06-21",2950.19],["2028-07-19",2947.94]]},"ZN":{"cash":"2026-10-29","m3":"2027-01-27","pts":[["2026-10-29",3947.74],["2026-10-30",3948.43],["2026-11-02",3950.54],["2026-11-03",3951.24],["2026-11-04",3941.24],["2026-11-05",3933.84],["2026-11-06",3926.44],["2026-11-09",3919.04],["2026-11-10",3911.64],["2026-11-12",3904.24],["2026-11-13",3897.85],["2026-11-16",3891.45],["2026-11-17",3885.06],["2026-11-18",3880.06],["2026-11-19",3879.06],["2026-11-20",3877.58],["2026-11-23",3880.36],["2026-11-24",3881.28],["2026-11-25",3882.21],["2026-11-27",3884.06],["2026-11-30",3883.37],["2026-12-01",3882.67],["2026-12-02",3880.97],["2026-12-03",3879.27],["2026-12-04",3877.57],["2026-12-07",3875.87],["2026-12-08",3872.98],["2026-12-09",3870.09],["2026-12-10",3867.19],["2026-12-11",3864.3],["2026-12-14",3858.3],["2026-12-15",3856.59],["2026-12-16",3854.87],["2026-12-17",3852.12],["2026-12-18",3850.27],["2026-12-21",3848.41],["2026-12-22",3846.56],["2026-12-23",3845.57],["2026-12-24",3844.57],["2026-12-29",3843.58],["2026-12-30",3841.58],["2026-12-31",3842.03],["2027-01-04",3843.83],["2027-01-05",3843.08],["2027-01-06",3844.33],["2027-01-07",3843.83],["2027-01-08",3843.33],["2027-01-11",3845.43],["2027-01-12",3846.13],["2027-01-13",3846.83],["2027-01-14",3846.79],["2027-01-15",3846.74],["2027-01-19",3846.7],["2027-01-20",3846.65],["2027-01-21",3843.81],["2027-01-22",3840.96],["2027-01-25",3840.99],["2027-01-26",3841],["2027-01-27",3842],["2027-02-17",3838.72],["2027-03-17",3831],["2027-04-21",3823.25],["2027-05-19",3817.25],["2027-06-16",3811],["2027-07-21",3803.5],["2027-08-18",3791.25],["2027-09-15",3777.25],["2027-10-20",3761.25],["2027-11-17",3744.62],["2027-12-15",3723.87],["2028-01-19",3710.12],["2028-02-16",3696.62],["2028-03-15",3683.12],["2028-04-19",3669.62],["2028-05-17",3655.87],["2028-06-21",3642.12],["2028-07-19",3628.62]]},"PB":{"cash":"2026-10-29","m3":"2027-01-27","pts":[["2026-10-29",1912.33],["2026-10-30",1913.08],["2026-11-02",1915.01],["2026-11-03",1915.65],["2026-11-04",1916.27],["2026-11-05",1916.9],["2026-11-06",1917.52],["2026-11-09",1919.4],["2026-11-10",1920.02],["2026-11-12",1921.27],["2026-11-13",1921.78],["2026-11-16",1923.31],["2026-11-17",1923.82],["2026-11-18",1924.33],["2026-11-19",1924.33],["2026-11-20",1924.33],["2026-11-23",1924.33],["2026-11-24",1924.8],["2026-11-25",1925.28],["2026-11-27",1926.22],["2026-11-30",1926.47],["2026-12-01",1926.55],["2026-12-02",1926.64],["2026-12-03",1926.72],["2026-12-04",1927.53],["2026-12-07",1929.97],["2026-12-08",1930.78],["2026-12-09",1931.6],["2026-12-10",1932.41],["2026-12-11",1933.22],["2026-12-14",1934.57],["2026-12-15",1935.02],["2026-12-16",1935.47],["2026-12-17",1930.97],["2026-12-18",1929.47],["2026-12-21",1929.56],["2026-12-22",1929.58],["2026-12-23",1929.61],["2026-12-24",1929.64],["2026-12-29",1932.14],["2026-12-30",1932.64],["2026-12-31",1933.44],["2027-01-04",1936.64],["2027-01-05",1937.1],["2027-01-06",1937.57],["2027-01-07",1938.03],["2027-01-08",1937.53],["2027-01-11",1938.13],["2027-01-12",1938.33],["2027-01-13",1938.53],["2027-01-14",1938.53],["2027-01-15",1938.53],["2027-01-19",1938.53],["2027-01-20",1938.53],["2027-01-21",1935.53],["2027-01-22",1933],["2027-01-25",1932.85],["2027-01-26",1932.7],["2027-01-27",1933],["2027-02-17",1943.16],["2027-03-17",1950.91],["2027-04-21",1962.72],["2027-05-19",1972.47],["2027-06-16",1982.47],["2027-07-21",1993.47],["2027-08-18",2000.72],["2027-09-15",2008.72],["2027-10-20",2016.97],["2027-11-17",2027.97],["2027-12-15",2035.72],["2028-01-19",2044.72],["2028-02-16",2053.72],["2028-03-15",2062.72],["2028-04-19",2071.47],["2028-05-17",2080.22],["2028-06-21",2088.72],["2028-07-19",2094.72]]},"NI":{"cash":"2026-10-29","m3":"2027-01-27","pts":[["2026-10-29",15439.29],["2026-10-30",15440.29],["2026-11-02",15448.92],["2026-11-03",15451.79],["2026-11-04",15454.67],["2026-11-05",15457.54],["2026-11-06",15461.29],["2026-11-09",15468.79],["2026-11-10",15471.29],["2026-11-12",15477.13],["2026-11-13",15479.66],["2026-11-16",15487.26],["2026-11-17",15489.79],["2026-11-18",15490.29],["2026-11-19",15490.79],["2026-11-20",15491.29],["2026-11-23",15500.14],["2026-11-24",15503.09],["2026-11-25",15506.04],["2026-11-27",15511.94],["2026-11-30",15520.79],["2026-12-01",15523.74],["2026-12-02",15526.69],["2026-12-03",15529.64],["2026-12-04",15532.07],["2026-12-07",15539.37],["2026-12-08",15541.81],["2026-12-09",15544.24],["2026-12-10",15546.56],["2026-12-11",15546.69],["2026-12-14",15549.73],["2026-12-15",15549.73],["2026-12-16",15547.74],["2026-12-17",15547.74],["2026-12-18",15550.37],["2026-12-21",15558.24],["2026-12-22",15560.23],["2026-12-23",15562.23],["2026-12-24",15564.22],["2026-12-29",15576.24],["2026-12-30",15578.49],["2026-12-31",15581.6],["2027-01-04",15594.02],["2027-01-05",15595.32],["2027-01-06",15596.62],["2027-01-07",15599.13],["2027-01-08",15601.64],["2027-01-11",15605.55],["2027-01-12",15606.86],["2027-01-13",15608.16],["2027-01-14",15609.9],["2027-01-15",15611.64],["2027-01-19",15615.26],["2027-01-20",15613.64],["2027-01-21",15615.76],["2027-01-22",15615.76],["2027-01-25",15624.19],["2027-01-26",15627],["2027-01-27",15629],["2027-02-17",15668.78],["2027-03-17",15728],["2027-04-21",15798],["2027-05-19",15858],["2027-06-16",15921],["2027-07-21",15987],["2027-08-18",16051],["2027-09-15",16114],["2027-10-20",16176],["2027-11-17",16238],["2027-12-15",16299],["2028-01-19",16362],["2028-02-16",16425],["2028-03-15",16488],["2028-04-19",16552],["2028-05-17",16616],["2028-06-21",16680],["2028-07-19",16744]]},"SN":{"cash":"2026-10-29","m3":"2027-01-27","pts":[["2026-10-29",51576.86],["2026-10-30",51575.86],["2026-11-02",51574.86],["2026-11-03",51573.86],["2026-11-04",51572.86],["2026-11-05",51571.86],["2026-11-06",51570.86],["2026-11-09",51564.18],["2026-11-10",51557.49],["2026-11-12",51550.81],["2026-11-13",51550.81],["2026-11-16",51550.81],["2026-11-17",51550.81],["2026-11-18",51552.31],["2026-11-19",51532.31],["2026-11-20",51525.64],["2026-11-23",51518.98],["2026-11-24",51512.31],["2026-11-25",51512.31],["2026-11-27",51512.31],["2026-11-30",51513.06],["2026-12-01",51513.31],["2026-12-02",51513.56],["2026-12-03",51513.81],["2026-12-04",51514.06],["2026-12-07",51527.1],["2026-12-08",51531.44],["2026-12-09",51535.79],["2026-12-10",51536.03],["2026-12-11",51536.28],["2026-12-14",51537],["2026-12-15",51537.25],["2026-12-16",51537.49],["2026-12-17",51527.49],["2026-12-18",51517.49],["2026-12-21",51513.27],["2026-12-22",51509.05],["2026-12-23",51504.83],["2026-12-24",51500.61],["2026-12-29",51499.07],["2026-12-30",51497.53],["2026-12-31",51495.99],["2027-01-04",51494.46],["2027-01-05",51492.92],["2027-01-06",51491.38],["2027-01-07",51489.84],["2027-01-08",51488.3],["2027-01-11",51486.76],["2027-01-12",51485.23],["2027-01-13",51483.69],["2027-01-14",51482.15],["2027-01-15",51480.61],["2027-01-19",51496.61],["2027-01-20",51500.61],["2027-01-21",51475.61],["2027-01-22",51475.61],["2027-01-25",51470.74],["2027-01-26",51465.87],["2027-01-27",51461],["2027-02-17",51464.21],["2027-03-17",51455],["2027-04-21",51447],["2027-05-19",51447],["2027-06-16",51446],["2027-07-21",51450],["2027-08-18",51448],["2027-09-15",51446],["2027-10-20",51444],["2027-11-17",51444],["2027-12-15",51444],["2028-01-19",51466]]}};
+const CURVE_BASE = CURVE;
+let CURVE_DATE = '2026-10-27', CURVE_SRC = 'default';
+const STORE_KEY = 'lme-daily-eval-v1';
+const SHOW_CALC = false; /* 최종 배포 시 false: 스프레드 계산 근거 박스 숨김 */
+if (!SHOW_CALC) document.addEventListener('DOMContentLoaded', () => ['ssDetail','sbDetail'].forEach(id => document.getElementById(id).classList.add('hidden')));
+try {
+  const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+  if (saved && saved.data && saved.data.CU){ CURVE = Object.assign({}, CURVE, saved.data); CURVE_DATE = saved.date; CURVE_SRC = 'saved'; }
+} catch (e) {}
+const LOTS = {CU:25, AL:25, ZN:25, PB:25, NI:6, SN:5};
+const DAY = 86400000, MINUS = '\u2212', IMR = 0.10;
+const $ = id => document.getElementById(id);
+const num = id => parseFloat($(id).value) || 0;
+const radio = n => document.querySelector('input[name="'+n+'"]:checked').value;
+const WD = ['일','월','화','수','목','금','토'];
+
+function parseDate(s){ const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s||''); return m ? Date.UTC(+m[1], +m[2]-1, +m[3]) : NaN; }
+function parseMonth(s){ const m = /^(\d{4})-(\d{1,2})/.exec(s||''); return m ? {y:+m[1], m:+m[2]-1} : null; }
+function monthStr(y, m){ return y + '-' + String(m+1).padStart(2,'0'); }
+function ymd(t){ const d = new Date(t); return {y: d.getUTCFullYear(), m: d.getUTCMonth(), d: d.getUTCDate()}; }
+function thirdWed(y, m){ const wd = new Date(Date.UTC(y, m, 1)).getUTCDay(); return Date.UTC(y, m, 1 + ((3 - wd + 7) % 7) + 14); }
+function isThirdWed(t){ const d = ymd(t); return t === thirdWed(d.y, d.m); }
+function isBiz(t){ const d = new Date(t).getUTCDay(); return d !== 0 && d !== 6; }
+function bizRange(a, b){ const out = []; for (let t = a; t <= b; t += DAY) if (isBiz(t)) out.push(t); return out; }
+function nthBiz(y, m, n){ let k = 0; for (let t = Date.UTC(y, m, 1); ; t += DAY){ if (isBiz(t) && ++k === n) return t; } }
+function lastBiz(y, m){ for (let t = Date.UTC(y, m + 1, 0); ; t -= DAY) if (isBiz(t)) return t; }
+function addBiz(t, n){ while (n > 0){ t += DAY; if (isBiz(t)) n--; } return t; }
+function nextBizFrom(t){ while (!isBiz(t)) t += DAY; return t; }
+function addMonthsClamp(t, k){
+  const d = ymd(t), y = d.y + Math.floor((d.m + k)/12), m = (d.m + k) % 12;
+  return Date.UTC(y, m, Math.min(d.d, new Date(Date.UTC(y, m + 1, 0)).getUTCDate()));
+}
+function threeM(t){
+  let x = addMonthsClamp(t, 3); const mo = ymd(x).m;
+  if (isBiz(x)) return x;
+  let f = x; while (!isBiz(f)) f += DAY;
+  if (ymd(f).m === mo) return f;
+  while (!isBiz(x)) x -= DAY; return x;
+}
+function nextMonth(c){ return c.m === 11 ? {y: c.y + 1, m: 0} : {y: c.y, m: c.m + 1}; }
+function minMat(c){ const n = nextMonth(c); return nthBiz(n.y, n.m, 2); }
+function defMat(c){ const n = nextMonth(c); return thirdWed(n.y, n.m); }
+function fmtD(t){ const d = ymd(t); return (d.m+1) + '/' + d.d; }
+function fmtDW(t){ return fmtD(t) + ' (' + WD[new Date(t).getUTCDay()] + ')'; }
+function fmtY(t){ const d = ymd(t); return d.y + '/' + (d.m+1) + '/' + d.d; }
+function monthLabel(c){ return c.y + '년 ' + (c.m+1) + '월'; }
+function candLabel(c){ return c.cash ? fmtD(c.sdate) + ' Cash' : monthLabel(c) + ' 평균'; }
+const px2 = v => '$' + v.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2});
+const sp2 = v => (v > 0.004 ? '+' : v < -0.004 ? MINUS : '') + Math.abs(v).toFixed(2);
+
+/* curve lookup: exact, calendar-day linear interpolation, or clamp */
+function curvePts(metal){ return CURVE[metal].pts.map(([d, p]) => [parseDate(d), p]); }
+let PTS = curvePts('CU');
+function cv(t){
+  const n = PTS.length;
+  if (t <= PTS[0][0]) return { px: PTS[0][1], how: t === PTS[0][0] ? 'exact' : 'clamp' };
+  if (t >= PTS[n-1][0]) return { px: PTS[n-1][1], how: t === PTS[n-1][0] ? 'exact' : 'clamp' };
+  for (let i = 1; i < n; i++){
+    const [t1, p1] = PTS[i];
+    if (t === t1) return { px: p1, how: 'exact' };
+    if (t < t1){ const [t0, p0] = PTS[i-1]; return { px: p0 + (p1 - p0)*(t - t0)/(t1 - t0), how: 'interp', a: t0, b: t1 }; }
+  }
+}
+const howTxt = h => h.how === 'interp' ? ' <span class="w">보간 (' + fmtD(h.a) + '~' + fmtD(h.b) + ' 달력일 기준)</span>' : h.how === 'clamp' ? ' <span class="w">커브 범위 밖, 가장 가까운 값 사용</span>' : '';
+
+const usd = (v, sign=true) => {
+  const s = Math.abs(Math.round(v)).toLocaleString('en-US');
+  return (sign ? (v >= 0.5 ? '+' : v <= -0.5 ? MINUS : '') : '') + '$' + s;
+};
+const per = v => (v >= 0.05 ? '+' : v <= -0.05 ? MINUS : '') + '$' + Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}) + '/mt';
+const krw = (v, fx) => {
+  const m = v*fx/1e6, a = Math.abs(m);
+  return (m >= 0.05 ? '+' : m <= -0.05 ? MINUS : '') + a.toLocaleString('ko-KR',{maximumFractionDigits: a < 100 ? 1 : 0}) + ' 백만원';
+};
+const cls = (el, v) => { el.classList.toggle('pos', v >= 0.5); el.classList.toggle('neg', v <= -0.5); };
+const tons = v => (Math.round(v*1000)/1000).toLocaleString('en-US') + 'mt';
+
+/* dates: today and pricing window */
+const now = new Date();
+const TODAY = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+const P_LO = nextBizFrom(TODAY);
+const P_HI = addMonthsClamp(TODAY, 1);
+let pdate = P_LO;
+const sdates = [NaN, NaN, NaN], matsC = [NaN, NaN, NaN];
+const cashMode = () => radio('sbasis') === 'cash';
+const getMat = i => cashMode() ? matsC[i] : mats[i];
+let rdate = NaN;
+function ensureR(){ const lo = addBiz(pdate, 2); if (isNaN(rdate) || rdate < lo) rdate = Math.max(threeM(pdate), lo); }
+const mats = [NaN, NaN, NaN];
+(function initCands(){
+  let c = ymd(pdate);
+  [0,1,2].forEach(i => { const n = nextMonth({y: c.y, m: c.m}); c = {y: n.y, m: n.m, d: 1}; $('m'+i).value = monthStr(n.y, n.m); mats[i] = defMat(n); sdates[i] = thirdWed(n.y, n.m); matsC[i] = addBiz(sdates[i], 2); });
+})();
+
+/* lots */
+function syncLots(){
+  const lot = LOTS[$('metal').value] || 25, Q = Math.max(num('Q'), 0);
+  const fl = Math.floor(Q/lot + 1e-9), ce = Math.ceil(Q/lot - 1e-9);
+  const ro = $('round'), cl = $('customLots'), prev = parseInt(cl.value);
+  cl.innerHTML = '';
+  for (let n = 1; n <= Math.max(ce, 1); n++){
+    const o = document.createElement('option'); o.value = n; o.text = n + ' lot (' + tons(n*lot) + ')'; cl.appendChild(o);
+  }
+  cl.value = (prev >= 1 && prev <= ce) ? prev : Math.max(fl, 1);
+  cl.classList.toggle('hidden', ro.value !== 'custom');
+  $('lotShow').classList.toggle('hidden', ro.value === 'custom');
+  const n = ro.value === 'floor' ? fl : ro.value === 'ceil' ? ce : parseInt(cl.value) || 0;
+  $('lotShow').textContent = n + ' lot (' + tons(n*lot) + ')';
+  const rest = Q - n*lot;
+  $('lotHint').textContent = '헤지 ' + n + ' lot = ' + tons(n*lot) + ', ' +
+    (Math.abs(rest) < 1e-6 ? '전량 헤지' : rest > 0 ? '미헤지 ' + tons(rest) + ' (' + (rest/Q*100).toFixed(1) + '%)' : '오버헤지 ' + tons(-rest));
+  return { n, lot };
+}
+
+/* sell leg start date by basis */
+function sellStart(basis){
+  if (basis === 'cash') return { t: addBiz(pdate, 2), name: 'Cash' };
+  if (basis === 'custom') return { t: rdate, name: '기준일' };
+  const d = ymd(pdate); return { t: thirdWed(d.y, d.m), name: (d.m+1) + '월 date' };
+}
+
+function smooth(t){ return t*t*(3 - 2*t); }
+function pathVal(f, s){
+  const knots = s.shape === 'line' ? [[0,0],[1,s.E]]
+    : s.shape === 'up' ? [[0,0],[0.4,s.E + s.S],[1,s.E]]
+    : s.shape === 'down' ? [[0,0],[0.4,s.E - s.S],[1,s.E]]
+    : [[0,0],[0.65,0],[1,s.E]];
+  f = Math.max(0, Math.min(1, f));
+  for (let i = 1; i < knots.length; i++){
+    const [x0,y0] = knots[i-1], [x1,y1] = knots[i];
+    if (f <= x1){ const u = (f - x0)/(x1 - x0); return y0 + (y1 - y0)*smooth(u); }
+  }
+  return knots[knots.length-1][1];
+}
+
+function read(L){
+  const basis = radio('basis'), pd = ymd(pdate);
+  const T0 = basis === 'avg' ? lastBiz(pd.y, pd.m) : pdate;
+  const st = sellStart(basis), stv = cv(st.t);
+  const cands = [0,1,2].map(i => {
+    const av = parseFloat($('a'+i).value);
+    if (cashMode()){
+      if (i > 0) return { i };
+      const t = sdates[i]; if (isNaN(t)) return { i };
+      const d = ymd(t), ref = addBiz(t, 2), mat = matsC[i], m = cv(mat), r = cv(ref);
+      return { y: d.y, m: d.m, i, cash: true, sdate: t, mat, ref, mPx: m, rPx: r, ss: m.px - stv.px, sb: m.px - r.px, avgIn: av > 0 ? av : null };
+    }
+    const c = parseMonth($('m'+i).value); if (!c) return { i };
+    const ref = thirdWed(c.y, c.m), mat = mats[i];
+    const m = cv(mat), r = cv(ref);
+    return { ...c, i, mat, ref, mPx: m, rPx: r, ss: m.px - stv.px, sb: m.px - r.px, avgIn: av > 0 ? av : null };
+  });
+  return {
+    dir: radio('dir'), lot: L.lot, nLots: L.n, Q: Math.max(num('Q'), 0), basis, T0, P0: (parseFloat($('P0').value) > 0 ? parseFloat($('P0').value) : stv.px), P0blank: !(parseFloat($('P0').value) > 0), st, stv,
+    fx: num('fx'), shape: radio('shape'), E: num('E'), S: num('S'), sel: +radio('sel'), cands
+  };
+}
+
+function compute(s){
+  const okC = c => c.y !== undefined && (c.cash ? c.sdate > s.T0 : s.basis === 'avg' ? Date.UTC(c.y, c.m, 1) > s.T0 : Date.UTC(c.y, c.m + 1, 0) > s.T0);
+  const endOf = c => c.cash ? c.sdate : Date.UTC(c.y, c.m + 1, 0);
+  const valid = s.cands.filter(okC);
+  if (!valid.length) return { error: '가격결정일 이후의 후보월을 하나 이상 입력하세요.' };
+  const lastEnd = Math.max(...valid.map(endOf));
+  const span = lastEnd - s.T0;
+  const price = t => s.P0 * (1 + pathVal((t - s.T0)/span, s)/100);
+  const Qh = s.nLots*s.lot, rest = s.Q - Qh, IM = IMR*s.P0*Qh;
+  const res = s.cands.map(c => {
+    if (c.y === undefined) return null;
+    if (!okC(c)) return { c, invalid: true };
+    const mStart = c.cash ? c.sdate : Date.UTC(c.y, c.m, 1), mEnd = c.cash ? c.sdate : Date.UTC(c.y, c.m + 1, 0);
+    const avgDays = c.cash ? [c.sdate] : bizRange(mStart, mEnd);
+    const avgPx = avgDays.map(t => t < s.T0 ? s.P0 : price(t));
+    const pathAvg = avgPx.reduce((a,b) => a + b, 0)/avgPx.length, Avg = c.avgIn || pathAvg;
+    const settle = c.mat, sellP = s.P0 + c.ss, buyP = Avg + c.sb;
+    const D = s.dir === 'sell' ? -1 : 1;
+    const phys = D*(Avg - s.P0)*s.Q, lmePx = D*(s.P0 - Avg)*Qh, spread = D*(c.ss - c.sb)*Qh;
+    const total = phys + lmePx + spread;
+    let fixedSum = 0, k = 0, peak = IM, peakT = s.T0;
+    const path = bizRange(s.T0, settle).map(t => {
+      let mtm;
+      if (t < mStart) mtm = -D*(price(t) - s.P0)*Qh;
+      else if (t <= mEnd){
+        const idx = avgDays.indexOf(t);
+        if (idx >= 0){ fixedSum += avgPx[idx]; k++; }
+        mtm = -D*((fixedSum + price(t)*(avgDays.length - k))/avgDays.length - s.P0)*Qh;
+      } else mtm = -D*(Avg - s.P0)*Qh;
+      const need = IM + Math.max(0, -mtm);
+      if (need > peak){ peak = need; peakT = t; }
+      return { t, need };
+    });
+    return { c, Avg, pathAvg, settle, mStart, mEnd, sellP, buyP, phys, lmePx, spread, total, IM, path, peak, peakT };
+  });
+  return { res, Qh, rest, price, lastEnd, IM };
+}
+
+function syncButtons(){
+  const cust = radio('basis') === 'custom';
+  $('rRow').classList.toggle('hidden', !cust);
+  if (cust){ ensureR(); $('rbtn').textContent = fmtDW(rdate); $('rbtn').classList.toggle('lme', isThirdWed(rdate)); }
+  else if (calFor === 'r') closeCal();
+  $('pbtn').textContent = fmtDW(pdate); $('pbtn').classList.toggle('lme', isThirdWed(pdate));
+  const cm = cashMode();
+  document.querySelectorAll('.mlab').forEach(e => e.classList.toggle('hidden', cm));
+  document.querySelectorAll('.slab').forEach(e => e.classList.toggle('hidden', !cm));
+  ['cand1','cand2'].forEach(id => $(id).classList.toggle('hidden', cm));
+  document.querySelector('#cand0 input[name=sel]').style.visibility = cm ? 'hidden' : '';
+  if (cm) document.querySelector('#cand0 input[name=sel]').checked = true;
+  $('cmpTitle').closest('.card').classList.toggle('hidden', cm);
+  [0,1,2].forEach(i => { $('sb'+i).textContent = isNaN(sdates[i]) ? '선택' : fmtDW(sdates[i]); $('sb'+i).classList.toggle('lme', isThirdWed(sdates[i])); });
+  [0,1,2].forEach(i => {
+    const b = $('mat'+i), t = getMat(i);
+    b.textContent = isNaN(t) ? '선택' : fmtDW(t);
+    b.classList.toggle('lme', !isNaN(t) && isThirdWed(t));
+  });
+}
+
+let lastRef = null;
+function render(){
+  PTS = curvePts($('metal').value);
+  const L = syncLots(); syncButtons();
+  const s = read(L);
+  const metal = $('metal').value, C = CURVE[metal];
+  $('curveInfo').textContent = '스프레드 기준: ' + CURVE_DATE + ' 커브' + (CURVE_SRC === 'default' ? ' (기본값)' : '') + ', Cash ' + fmtD(parseDate(C.cash)) + ', 3M ' + fmtD(parseDate(C.m3)) + '. 가격결정일은 ' + fmtD(P_LO) + '~' + fmtD(P_HI) + ' 영업일 중에서 고릅니다.';
+  let prevBiz = TODAY - DAY; while (!isBiz(prevBiz)) prevBiz -= DAY;
+  const stale = Math.round((TODAY - parseDate(CURVE_DATE))/DAY);
+  if (!$('evalStatus').dataset.msg) $('evalStatus').innerHTML = parseDate(CURVE_DATE) < prevBiz ? '<span class="bad">커브가 ' + stale + '일 전 기준입니다. 오늘 커브를 올려주세요.</span>' : '<span class="ok">최신 커브 사용 중</span>';
+  const pdm = ymd(pdate).m + 1;
+  const B = s.dir !== 'sell', pName = B ? '매입가' : '판매가', f1 = B ? 'Sell' : 'Buy', f2 = B ? 'Buy' : 'Sell', cName = cashMode() ? (B ? '판매일' : '매입일') : (B ? '판매월' : '매입월');
+  $('lg1').textContent = pName + ' 정보 (선물 ' + f1 + ')';
+  $('lg2').textContent = cName + ' 후보와 만기 (선물 ' + f2 + ')';
+  const CM = cashMode(), pxName = B ? '판매가' : '매입가';
+  document.querySelectorAll('.sdl').forEach(e => e.textContent = (B ? '판매' : '매입') + ' 가격결정일 (Cash)');
+  document.querySelectorAll('.avl').forEach(e => e.textContent = (CM ? pxName : '평균가') + ' (USD/mt)');
+  $('n1').textContent = CM ? '* ' + pxName + '를 비워두면 흐린 글씨의 시나리오 경로 가격을 씁니다.' : '* 평균가를 비워두면 흐린 글씨의 시나리오 경로 월평균을 씁니다.';
+  $('n2').textContent = CM ? '* ' + f2 + ' 스프레드는 ' + (B ? '판매' : '매입') + ' 가격결정일의 Cash(+2영업일)에서 만기까지의 가격차입니다.' : '* ' + f2 + ' 스프레드는 평균가 월의 셋째 수요일에서 만기까지의 가격차입니다.';
+  $('n3').textContent = CM ? '* 만기는 Cash 날짜부터 고를 수 있고, 초록색은 LME 3rd Wednesday입니다.' : '* 만기는 평균가 월 다음 달 2영업일부터 고를 수 있고, 초록색은 LME 3rd Wednesday입니다.';
+  $('s1Label').textContent = f1 + ' 스프레드 (USD/mt)'; document.querySelectorAll('.s2lbl').forEach(e => e.textContent = f2 + ' 스프레드'); $('s2Name').textContent = f2;
+  $('cmpTitle').textContent = cName + '별 결과 비교';
+  $('cmpCap').textContent = '같은 가격 경로에서 ' + cName + '만 바꿨을 때입니다. 행을 누르면 그 ' + cName + '로 아래 분석이 바뀝니다.';
+  $('p0Leg').textContent = pName;
+  $('mgCap').textContent = B ? '가격이 오르면 실물은 평가이익이지만 아직 팔지 않았으므로 현금이 없고, 선물 매도 손실은 그때그때 현금으로 납입해야 합니다.'
+    : '가격이 내리면 수주한 실물은 평가이익이지만 원자재를 아직 사지 않았으므로 현금이 없고, 선물 매수 손실은 그때그때 현금으로 납입해야 합니다.';
+  $('P0Label').textContent = s.basis === 'cash' ? pName + ', Cash (USD/mt)' : s.basis === 'custom' ? pName + ', ' + fmtD(rdate) + ' (USD/mt)' : pName + ', ' + pdm + '월 평균 (USD/mt)';
+  $('refHint').innerHTML = (s.basis === 'avg' ? (B ? '매입' : '판매') + ' 평균가 월은 가격결정일이 속한 ' + pdm + '월입니다. ' : '') +
+    '기준 커브 ' + s.st.name + ' (' + fmtD(s.st.t) + ') 가격 ' + px2(s.stv.px) + ' <button type="button" class="linkbtn" id="useRef">' + pName + '에 넣기</button>';
+  $('useRef').onclick = () => { $('P0').value = s.stv.px.toFixed(2); render(); };
+  $('P0').placeholder = s.stv.px.toFixed(2);
+
+  s.cands.forEach(c => { if (c.y !== undefined) $('b'+c.i).textContent = sp2(c.sb); else $('b'+c.i).textContent = ''; });
+  $('EOut').textContent = (s.E > 0 ? '+' : s.E < 0 ? MINUS : '') + Math.abs(s.E) + '%';
+  $('SOut').textContent = s.S + '%p';
+  $('swingWrap').classList.toggle('hidden', s.shape === 'line' || s.shape === 'late');
+
+  const out = compute(s), err = $('errBox');
+  if (out.error){ err.textContent = out.error; err.classList.remove('hidden'); return; }
+  let r = out.res[s.sel];
+  if (!r || r.invalid){
+    const firstOk = out.res.findIndex(x => x && !x.invalid);
+    document.querySelector('input[name="sel"][value="'+firstOk+'"]').checked = true;
+    return render();
+  }
+  const bad = out.res.filter(x => x && x.invalid).map(x => candLabel(x.c));
+  if (bad.length){ err.textContent = bad.join(', ') + '은 가격결정 시점 이전이라 계산에서 뺐습니다.'; err.classList.remove('hidden'); }
+  else err.classList.add('hidden');
+
+  out.res.forEach((x, i) => {
+    $('cand'+i).classList.toggle('on', i === s.sel);
+    if (!x || x.invalid){ $('fin'+i).textContent = ''; $('a'+i).placeholder = ''; return; }
+    $('a'+i).placeholder = Math.round(x.pathAvg).toLocaleString('en-US');
+    $('fin'+i).textContent = px2(x.Avg + x.c.sb);
+  });
+  const c = r.c;
+  $('ssShow').textContent = sp2(c.ss);
+  $('finalShow').textContent = px2(s.P0 + c.ss);
+  $('ssDetail').innerHTML = s.st.name + ' ' + fmtD(s.st.t) + ' ' + px2(s.stv.px) + howTxt(s.stv) + '<br>→ 만기 ' + fmtD(c.mat) + ' ' + px2(c.mPx.px) + howTxt(c.mPx) +
+    '<br>= <b>' + sp2(c.ss) + '</b> (' + candLabel(c) + ' 후보 만기 기준)';
+  $('sbDetail').innerHTML = (c.cash ? 'Cash ' : monthLabel(c) + ' date ') + fmtD(c.ref) + ' ' + px2(c.rPx.px) + howTxt(c.rPx) + '<br>→ 만기 ' + fmtD(c.mat) + ' ' + px2(c.mPx.px) + howTxt(c.mPx) + '<br>= ' + f2 + ' 스프레드 <b>' + sp2(c.sb) + '</b>';
+
+  $('unTot').textContent = usd(r.phys); cls($('unTot'), r.phys);
+  $('unSub').textContent = (B ? '판매가(' + (CM ? 'Cash' : '월평균') + ') $' + Math.round(r.Avg).toLocaleString('en-US') + ' − 매입가 $' + s.P0.toLocaleString('en-US') : '판매가 $' + s.P0.toLocaleString('en-US') + ' − 매입가(' + (CM ? 'Cash' : '월평균') + ') $' + Math.round(r.Avg).toLocaleString('en-US')) + '\n' + krw(r.phys, s.fx);
+  $('hTot').textContent = usd(r.total); cls($('hTot'), r.total);
+  $('hSub').textContent = krw(r.total, s.fx);
+  $('hBreak').innerHTML = '스프레드 손익 <b class="' + (r.spread >= 0.5 ? 'pos' : r.spread <= -0.5 ? 'neg' : '') + '">' + usd(r.spread) + '</b> + 미헤지 잔량 손익 <b class="' + (r.phys + r.lmePx >= 0.5 ? 'pos' : r.phys + r.lmePx <= -0.5 ? 'neg' : '') + '">' + usd(r.phys + r.lmePx) + '</b>';
+  const restTxt = Math.abs(out.rest) < 1e-6 ? '전량 헤지' : out.rest > 0 ? '미헤지 ' + tons(out.rest) : '오버헤지 ' + tons(-out.rest);
+  $('foot').innerHTML = '헤지 ' + s.nLots + ' lot (' + tons(out.Qh) + '), ' + restTxt +
+    '. 헤지하면 가격 손익은 상쇄되고 <b>스프레드 ' + usd(r.spread) + '</b>와 잔량 손익만 남습니다.';
+
+  let h = '<thead><tr><th>' + cName + '</th><th>만기</th><th>' + f1 + '</th><th>' + f2 + '</th><th>스프레드 손익</th><th>헤지 패키지</th><th>톤당</th><th>최대 필요 현금</th></tr></thead><tbody>';
+  out.res.forEach((x, i) => {
+    if (!x || x.invalid) return;
+    h += '<tr tabindex="0" data-i="'+i+'"' + (i === s.sel ? ' class="sel" aria-selected="true"' : '') + '>' +
+      '<td>' + candLabel(x.c) + '</td><td' + (isThirdWed(x.settle) ? ' style="color:var(--lme)"' : '') + '>' + fmtD(x.settle) + '</td>' +
+      '<td>' + sp2(x.c.ss) + '</td><td>' + sp2(x.c.sb) + '</td>' + tdv(x.spread) + tdv(x.total) +
+      '<td class="' + (x.total >= 0.5 ? 'pos' : x.total <= -0.5 ? 'neg' : '') + '">' + (s.Q ? per(x.total/s.Q) : '') + '</td>' +
+      '<td>' + usd(x.peak, false) + '</td></tr>';
+  });
+  $('cmp').innerHTML = h + '</tbody>';
+  $('cmp').querySelectorAll('tbody tr').forEach(tr => {
+    const pick = () => { document.querySelector('input[name="sel"][value="'+tr.dataset.i+'"]').checked = true; render(); };
+    tr.addEventListener('click', pick);
+    tr.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); pick(); } });
+  });
+
+  $('bdCap').textContent = candLabel(c) + ' ' + (B ? '판매' : '매입') + ' 기준. 선물 ' + f1 + ' $' + r.sellP.toLocaleString('en-US',{maximumFractionDigits:2}) +
+    ' (' + s.st.name + ' ' + sp2(c.ss) + '), 선물 ' + f2 + ' $' + Math.round(r.buyP).toLocaleString('en-US') + ' (' + (c.cash ? 'Cash ' : '월평균 ') + sp2(c.sb) + '), 만기 ' + fmtDW(r.settle) + '.';
+  $('bd').innerHTML = '<tbody>' +
+    bdRow(B ? '실물 마진 (월평균 − 매입가) × 실물 중량' : '실물 마진 (판매가 − 월평균) × 실물 중량', r.phys) +
+    bdRow(B ? 'LME 가격 손익 (매입가 − 월평균) × 헤지 물량' : 'LME 가격 손익 (월평균 − 판매가) × 헤지 물량', r.lmePx) +
+    bdRow('스프레드 손익 (Sell − Buy 스프레드) × 헤지 물량', r.spread) +
+    '<tr class="total"><td>합계</td>' + tdv(r.total) + '<td>' + krw(r.total, s.fx) + '</td></tr></tbody>';
+
+  drawPrice(s, out, r);
+  drawMargin(s, r);
+  $('stIM').textContent = usd(r.IM, false);
+  $('stPeak').textContent = usd(r.peak, false);
+  $('stDate').textContent = r.peak > r.IM + 0.5 ? fmtD(r.peakT) : '추가 납입 없음';
+  if (calFor !== null) renderCal();
+}
+function tdv(v){ return '<td class="' + (v >= 0.5 ? 'pos' : v <= -0.5 ? 'neg' : '') + '">' + usd(v) + '</td>'; }
+function bdRow(label, v){ return '<tr><td>' + label + '</td>' + tdv(v) + '<td></td></tr>'; }
+
+function niceStep(raw){ const p = Math.pow(10, Math.floor(Math.log10(raw))); const n = raw/p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10)*p; }
+function axes(W, H, L, R, T, B, t0, t1, lo, hi, fmtYv){
+  const step = niceStep((hi - lo)/4 || 1);
+  lo = Math.floor(lo/step)*step; hi = Math.ceil(hi/step)*step;
+  const X = t => L + (t - t0)/(t1 - t0)*(W - L - R);
+  const Y = v => T + (hi - v)/(hi - lo)*(H - T - B);
+  let g = '';
+  for (let v = lo; v <= hi + step/2; v += step){
+    g += '<line x1="'+L+'" x2="'+(W-R)+'" y1="'+Y(v)+'" y2="'+Y(v)+'" stroke="var(--line)"/>';
+    g += '<text x="'+(L-6)+'" y="'+(Y(v)+4)+'" text-anchor="end" font-size="11" fill="var(--muted)">'+fmtYv(v)+'</text>';
+  }
+  const d0 = new Date(t0);
+  for (let y = d0.getUTCFullYear(), m = d0.getUTCMonth() + 1; ; m++){
+    const t = Date.UTC(y, m, 1); if (t > t1) break;
+    const x = X(t);
+    g += '<line x1="'+x+'" x2="'+x+'" y1="'+T+'" y2="'+(H-B)+'" stroke="var(--line)" stroke-dasharray="2 3"/>';
+    g += '<text x="'+(x+3)+'" y="'+(H-B+15)+'" font-size="11" fill="var(--muted)">'+(new Date(t).getUTCMonth()+1)+'월</text>';
+  }
+  return { g, X, Y };
+}
+
+function drawPrice(s, out, r){
+  const W = 640, H = 250, L = 56, R = 10, T = 10, B = 26;
+  const t1 = Math.max(out.lastEnd, ...out.res.filter(x => x && !x.invalid).map(x => x.settle));
+  const days = bizRange(s.T0, out.lastEnd), px = days.map(t => out.price(t));
+  const lo = Math.min(...px, s.P0, r.Avg), hi = Math.max(...px, s.P0, r.Avg);
+  const pad = Math.max((hi - lo)*0.1, s.P0*0.01);
+  const a = axes(W, H, L, R, T, B, s.T0, t1, lo - pad, hi + pad, v => Math.round(v).toLocaleString('en-US'));
+  let g = '<rect x="'+a.X(r.mStart)+'" y="'+T+'" width="'+(a.X(r.mEnd + DAY) - a.X(r.mStart))+'" height="'+(H-T-B)+'" fill="var(--band)"/>' + a.g;
+  g += '<line x1="'+L+'" x2="'+(W-R)+'" y1="'+a.Y(s.P0)+'" y2="'+a.Y(s.P0)+'" stroke="var(--muted)" stroke-dasharray="5 4"/>';
+  g += '<path d="'+days.map((t,i) => (i?'L':'M')+a.X(t).toFixed(1)+' '+a.Y(px[i]).toFixed(1)).join(' ')+'" fill="none" stroke="var(--copper)" stroke-width="2.2"/>';
+  g += '<line x1="'+a.X(r.mStart)+'" x2="'+a.X(r.mEnd + DAY)+'" y1="'+a.Y(r.Avg)+'" y2="'+a.Y(r.Avg)+'" stroke="var(--steel)" stroke-width="3.5"/>';
+  const sx = a.X(r.settle);
+  g += '<line x1="'+sx+'" x2="'+sx+'" y1="'+T+'" y2="'+(H-B)+'" stroke="var(--steel)" stroke-dasharray="3 3"/>';
+  g += '<text x="'+(sx-4)+'" y="'+(T+12)+'" text-anchor="end" font-size="11" fill="var(--steel)">만기 '+fmtD(r.settle)+'</text>';
+  $('priceChart').innerHTML = g;
+}
+
+function drawMargin(s, r){
+  const W = 640, H = 220, L = 56, R = 10, T = 22, B = 26;
+  const p = r.path; if (!p.length) return;
+  const hi = Math.max(...p.map(x => x.need), r.IM*1.2, 1);
+  const a = axes(W, H, L, R, T, B, s.T0, r.settle, 0, hi, v => v >= 1e6 ? '$' + (v/1e6).toFixed(1) + 'M' : '$' + Math.round(v/1e3) + 'k');
+  let g = '<rect x="'+a.X(Math.max(r.mStart, s.T0))+'" y="'+T+'" width="'+Math.max(0, a.X(Math.min(r.mEnd + DAY, r.settle)) - a.X(Math.max(r.mStart, s.T0)))+'" height="'+(H-T-B)+'" fill="var(--band)"/>' + a.g;
+  const line = p.map((x,i) => (i?'L':'M')+a.X(x.t).toFixed(1)+' '+a.Y(x.need).toFixed(1)).join(' ');
+  g += '<path d="'+line+' L'+a.X(p[p.length-1].t).toFixed(1)+' '+a.Y(0)+' L'+a.X(p[0].t).toFixed(1)+' '+a.Y(0)+' Z" fill="var(--loss)" fill-opacity=".12"/>';
+  g += '<path d="'+line+'" fill="none" stroke="var(--loss)" stroke-width="2"/>';
+  g += '<line x1="'+L+'" x2="'+(W-R)+'" y1="'+a.Y(r.IM)+'" y2="'+a.Y(r.IM)+'" stroke="var(--muted)" stroke-dasharray="5 4"/>';
+  g += '<text x="'+(W-R-4)+'" y="'+(a.Y(r.IM)-5)+'" text-anchor="end" font-size="11" fill="var(--muted)">개시증거금</text>';
+  if (r.peak > r.IM + 0.5){
+    const x = a.X(r.peakT), y = a.Y(r.peak);
+    g += '<circle cx="'+x+'" cy="'+y+'" r="5" fill="var(--loss)" stroke="var(--surface)" stroke-width="2"/>';
+    g += '<text x="'+x+'" y="'+(y - 10)+'" text-anchor="middle" font-size="11" font-weight="600" fill="var(--loss)">최대 '+usd(r.peak,false)+'</text>';
+  }
+  $('marginChart').innerHTML = g;
+}
+
+/* calendar (pricing date 'p' or maturity 0..2) */
+let calFor = null, calView = null;
+const calEl = k => k === 'p' ? $('pcal') : k === 'r' ? $('rcal') : $('cal');
+const btnEl = k => k === 'p' ? $('pbtn') : k === 'r' ? $('rbtn') : (typeof k === 'string' && k[0] === 's') ? $('sb'+k.slice(1)) : $('mat'+k);
+function calBounds(k){
+  if (k === 'r'){ const lo = addBiz(pdate, 2); return { lo, hi: PTS[PTS.length-1][0], val: rdate, title: '기준일, ' + fmtD(lo) + '(Cash)부터 선택 가능' }; }
+  if (k === 'p') return { lo: P_LO, hi: P_HI, val: pdate, title: '가격결정일, ' + fmtD(P_LO) + '~' + fmtD(P_HI) + ' 영업일' };
+  if (typeof k === 'string' && k[0] === 's'){ const i = +k.slice(1), lo = addBiz(pdate, 1); return { lo, hi: PTS[PTS.length-1][0], val: sdates[i], title: '후보 ' + (i+1) + ' ' + ($('lg2').textContent.startsWith('매입') ? '매입' : '판매') + ' 가격결정일, ' + fmtD(lo) + '부터 선택 가능' }; }
+  if (cashMode()){ const lo = addBiz(sdates[k], 2); return { lo, hi: PTS[PTS.length-1][0], val: matsC[k], title: '후보 ' + (k+1) + ' (' + fmtD(sdates[k]) + ' Cash) 만기, ' + fmtD(lo) + '부터 선택 가능' }; }
+  const c = parseMonth($('m'+k).value); if (!c) return null;
+  const lo = minMat(c);
+  return { lo, hi: PTS[PTS.length-1][0], val: mats[k], title: '후보 ' + (k+1) + ' (' + monthLabel(c) + ' 평균) 만기, ' + fmtD(lo) + '부터 선택 가능' };
+}
+function openCal(k){
+  if (calFor === k){ closeCal(); return; }
+  if (calFor !== null) closeCal();
+  const bd = calBounds(k); if (!bd) return;
+  calFor = k;
+  const d = ymd(isNaN(bd.val) ? bd.lo : bd.val); calView = { y: d.y, m: d.m };
+  btnEl(k).setAttribute('aria-expanded', 'true');
+  calEl(k).classList.remove('hidden');
+  renderCal();
+}
+function closeCal(){
+  if (calFor === null) return;
+  calEl(calFor).classList.add('hidden'); btnEl(calFor).setAttribute('aria-expanded', 'false'); calFor = null;
+}
+function renderCal(){
+  const k = calFor, bd = calBounds(k); if (!bd) return closeCal();
+  const lo = ymd(bd.lo), hi = ymd(bd.hi), loKey = lo.y*12 + lo.m, hiKey = hi.y*12 + hi.m;
+  let key = calView.y*12 + calView.m;
+  if (key < loKey){ calView = {y: lo.y, m: lo.m}; key = loKey; }
+  if (key > hiKey){ calView = {y: hi.y, m: hi.m}; key = hiKey; }
+  const { y, m } = calView, first = new Date(Date.UTC(y, m, 1)).getUTCDay(), nd = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  let html = '<div class="ch"><button type="button" class="cprev" aria-label="이전 달"' + (key <= loKey ? ' disabled' : '') + '>‹</button>' +
+    '<b>' + y + '년 ' + (m+1) + '월</b><button type="button" class="cnext" aria-label="다음 달"' + (key >= hiKey ? ' disabled' : '') + '>›</button></div>' +
+    '<p class="for">' + bd.title + '</p><div class="grid">' + WD.map(w => '<span class="wd">' + w + '</span>').join('');
+  for (let i = 0; i < first; i++) html += '<span></span>';
+  for (let d = 1; d <= nd; d++){
+    const t = Date.UTC(y, m, d), dis = t < bd.lo || t > bd.hi || !isBiz(t);
+    const c2 = ['d', !dis && isThirdWed(t) ? 'lme' : '', t === bd.val ? 'sel' : ''].join(' ').trim();
+    html += '<button type="button" class="' + c2 + '" data-t="' + t + '"' + (dis ? ' disabled' : '') +
+      ' aria-label="' + (m+1) + '월 ' + d + '일' + (isThirdWed(t) ? ', LME 3rd Wednesday' : '') + '">' + d + '</button>';
+  }
+  html += '</div><div class="key"><span><i></i>LME 3rd Wednesday</span><span>선택 불가일은 흐리게 표시</span></div>';
+  const el = calEl(k); el.innerHTML = html;
+  el.querySelector('.cprev').onclick = () => { calView = m === 0 ? {y: y-1, m: 11} : {y, m: m-1}; renderCal(); };
+  el.querySelector('.cnext').onclick = () => { calView = m === 11 ? {y: y+1, m: 0} : {y, m: m+1}; renderCal(); };
+  el.querySelectorAll('.d:not(:disabled)').forEach(b => b.onclick = () => {
+    const t = +b.dataset.t;
+    if (k === 'p') pdate = t; else if (k === 'r') rdate = t; else if (typeof k === 'string' && k[0] === 's'){ const i = +k.slice(1); sdates[i] = t; matsC[i] = addBiz(t, 2); } else if (cashMode()) matsC[k] = t; else mats[k] = t;
+    const btn = btnEl(k); closeCal(); render(); btn.focus();
+  });
+}
+$('pbtn').addEventListener('click', e => { e.stopPropagation(); openCal('p'); });
+[0,1,2].forEach(i => {
+  $('mat'+i).addEventListener('click', e => { e.stopPropagation(); openCal(i); });
+  $('m'+i).addEventListener('change', () => { const c = parseMonth($('m'+i).value); mats[i] = c ? defMat(c) : NaN; if (calFor === i) renderCal(); render(); });
+});
+$('rbtn').addEventListener('click', e => { e.stopPropagation(); openCal('r'); });
+[0,1,2].forEach(i => $('sb'+i).addEventListener('click', e => { e.stopPropagation(); openCal('s'+i); }));
+document.querySelectorAll('input[name=sbasis]').forEach(r => r.addEventListener('change', () => closeCal()));
+['cal','pcal','rcal'].forEach(id => $(id).addEventListener('click', e => e.stopPropagation()));
+document.addEventListener('click', () => closeCal());
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && calFor !== null){ const b = btnEl(calFor); closeCal(); b.focus(); } });
+
+/* daily evaluation upload */
+const SHEETS = ['CU','AL','ZN','PB','NI','SN'];
+function loadXLSX(){
+  if (window.XLSX) return Promise.resolve();
+  return new Promise((ok, no) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    sc.onload = ok; sc.onerror = () => no(new Error('엑셀 읽기 도구를 불러오지 못했습니다.'));
+    document.head.appendChild(sc);
+  });
+}
+function serialToISO(v){
+  if (v instanceof Date) return new Date(Date.UTC(v.getFullYear(), v.getMonth(), v.getDate())).toISOString().slice(0,10);
+  if (typeof v === 'number' && v > 40000 && v < 60000) return new Date(Date.UTC(1899, 11, 30) + Math.round(v)*DAY).toISOString().slice(0,10);
+  return null;
+}
+function parseSheet(ws){
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+  let cash = null, m3 = null, monthRow = rows.length;
+  rows.forEach((r, i) => r.forEach((v, j) => {
+    if (v === 'Cash Date') cash = serialToISO(r[j+1]);
+    if (v === '3M Date') m3 = serialToISO(r[j+1]);
+    if (typeof v === 'string' && v.includes('월물') && i < monthRow) monthRow = i;
+  }));
+  const pts = {};
+  rows.forEach((r, i) => r.forEach((v, j) => {
+    const nx = r[j+1];
+    if (typeof nx !== 'number') return;
+    if (i < monthRow){
+      if (v === 'Cash' && cash) pts[cash] = nx;
+      else if (v === '3Months' && m3) pts[m3] = nx;
+      else if (i < monthRow - 3 && serialToISO(v)) pts[serialToISO(v)] = nx;
+    } else if (i > monthRow + 1 && serialToISO(v)) pts[serialToISO(v)] = nx;
+  }));
+  const list = Object.keys(pts).sort().map(d => [d, pts[d]]);
+  return (cash && m3 && list.length > 5) ? { cash, m3, pts: list } : null;
+}
+function applyWorkbook(wb, fname, how){
+  const data = {}, got = [];
+  SHEETS.forEach(n => { if (wb.Sheets[n]){ const p = parseSheet(wb.Sheets[n]); if (p){ data[n] = p; got.push(n); } } });
+  if (!data.CU) throw new Error('CU 시트에서 Cash to 3M 평가 구간을 찾지 못했습니다.');
+  const m = /(20\d{6})/.exec(fname || '');
+  const date = m ? m[1].slice(0,4) + '-' + m[1].slice(4,6) + '-' + m[1].slice(6,8) : data.CU.cash;
+  CURVE = Object.assign({}, CURVE, data); CURVE_DATE = date; CURVE_SRC = how;
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ date, data })); } catch (err) {}
+  pushShared(date, data);
+  const miss = SHEETS.filter(n => !data[n]);
+  return { date, got, miss };
+}
+function setStatus(html){ const st = $('evalStatus'); st.dataset.msg = '1'; st.innerHTML = html; }
+$('evalFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  setStatus('읽는 중...');
+  try {
+    await loadXLSX();
+    const r = applyWorkbook(XLSX.read(await f.arrayBuffer(), { type: 'array' }), f.name, 'upload');
+    setStatus('<span class="ok">' + r.date + ' 커브 적용 (' + r.got.join(', ') + ')</span>' + (r.miss.length ? ' <span class="bad">' + r.miss.join(', ') + '는 이전 값 유지</span>' : ''));
+  } catch (err) {
+    setStatus('<span class="bad">' + (err.message || '파일을 읽지 못했습니다.') + ' 파일 형식을 확인하세요.</span>');
+  }
+  e.target.value = '';
+  render();
+});
+
+/* Gmail auto-update: find the latest DAILY_EVALUATION attachment in the viewer's Gmail */
+const GMAIL = 'Gmail';
+const GMAIL_QUERY = 'has:attachment filename:xlsx (EVALUATION OR evaluation) newer_than:10d';
+function b64urlToBin(s){ s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return atob(s); }
+function binToBytes(b){ const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i) & 255; return u; }
+function decodeWords(v){
+  return v.replace(/=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g, (all, cs, enc, txt) => {
+    try {
+      const bin = enc.toUpperCase() === 'B' ? atob(txt.replace(/-/g,'+').replace(/_/g,'/')) : txt.replace(/_/g, ' ').replace(/=([0-9A-F]{2})/gi, (x, h) => String.fromCharCode(parseInt(h, 16)));
+      return new TextDecoder(cs).decode(binToBytes(bin));
+    } catch (e) { return all; }
+  });
+}
+function mimeParts(str, out){
+  const sep = str.search(/\r?\n\r?\n/); if (sep < 0) return out;
+  const head = str.slice(0, sep).replace(/\r?\n[ \t]+/g, ' '), body = str.slice(sep).replace(/^\r?\n\r?\n/, '');
+  const h = {}; head.split(/\r?\n/).forEach(l => { const i = l.indexOf(':'); if (i > 0) h[l.slice(0, i).trim().toLowerCase()] = l.slice(i + 1).trim(); });
+  const ct = h['content-type'] || '', bm = /boundary="?([^";]+)"?/i.exec(ct);
+  if (/^multipart\//i.test(ct) && bm){
+    body.split('--' + bm[1]).slice(1).forEach(p => { if (!/^--/.test(p)) mimeParts(p.replace(/^\r?\n/, ''), out); });
+  } else {
+    const cd = h['content-disposition'] || '';
+    let fn = (/filename\*=(?:[^']*'[^']*')?"?([^";]+)"?/i.exec(cd) || /filename="?([^";]+)"?/i.exec(cd) || /name="?([^";]+)"?/i.exec(ct) || [])[1] || '';
+    if (/%[0-9A-F]{2}/i.test(fn)) { try { fn = decodeURIComponent(fn); } catch (e) {} }
+    out.push({ name: decodeWords(fn), enc: (h['content-transfer-encoding'] || '').toLowerCase(), body });
+  }
+  return out;
+}
+function payloadOf(r){ let p = r && r.payload; if (typeof p === 'string'){ try { p = JSON.parse(p); } catch (e) {} } return p || {}; }
+let gmailBusy = false;
+async function gmailRefresh(manual){
+  if (gmailBusy) return; gmailBusy = true;
+  const btn = $('gmailBtn');
+  try {
+    const mcp = (window.claude && window.claude.use) ? await window.claude.use('mcp') : null;
+    if (!mcp){ if (manual) setStatus('<span class="bad">이 화면에서는 Gmail에 연결할 수 없습니다. claude.ai에서 페이지를 열어주세요.</span>'); btn.classList.add('hidden'); return; }
+    btn.classList.remove('hidden');
+    setStatus('Gmail에서 평가표 확인 중...');
+    const call = (tool, input) => mcp.callTool(GMAIL, tool, input, { cache: false }).catch(async err => {
+      if (err && err.retryable){ await new Promise(r => setTimeout(r, Math.min(err.retryAfterMs || 1500 + Math.random()*1000, 60000))); return mcp.callTool(GMAIL, tool, input, { cache: false }); }
+      throw err;
+    });
+    const list = payloadOf(await call('search_threads', { query: GMAIL_QUERY, pageSize: 10, view: 'THREAD_VIEW_MINIMAL' }));
+    const msgs = [];
+    (list.threads || []).forEach(t => (t.messages || []).forEach(m => msgs.push(m)));
+    msgs.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    if (!msgs.length){ setStatus('<span class="bad">최근 10일 Gmail에 DAILY_EVALUATION 첨부 메일이 없습니다. 파일을 직접 올려주세요.</span>'); return; }
+    let found = null;
+    for (const m of msgs.slice(0, 3)){
+      const raw = payloadOf(await call('get_message', { messageId: m.id, messageFormat: 'RAW' })).raw;
+      if (!raw) continue;
+      const parts = mimeParts(b64urlToBin(raw), []).filter(p => /\.xlsx?$/i.test(p.name));
+      const part = parts.find(p => /evaluation/i.test(p.name)) || null;
+      if (part){ found = { part, m }; break; }
+    }
+    if (!found){ setStatus('<span class="bad">메일은 찾았지만 DAILY_EVALUATION 엑셀 첨부를 찾지 못했습니다. 파일을 직접 올려주세요.</span>'); return; }
+    const fm = /(20\d{6})/.exec(found.part.name), fdate = fm ? fm[1].slice(0,4) + '-' + fm[1].slice(4,6) + '-' + fm[1].slice(6,8) : null;
+    if (fdate && fdate <= CURVE_DATE && CURVE_SRC !== 'default' && !manual){ $('evalStatus').dataset.msg = ''; render(); return; }
+    await loadXLSX();
+    const bin = found.part.enc === 'base64' ? atob(found.part.body.replace(/[^A-Za-z0-9+/=]/g, '')) : found.part.body;
+    const r = applyWorkbook(XLSX.read(binToBytes(bin), { type: 'array' }), found.part.name, 'gmail');
+    const when = found.m.date ? new Date(found.m.date) : null;
+    setStatus('<span class="ok">Gmail에서 ' + r.date + ' 평가표 자동 적용' + (when ? ' (수신 ' + (when.getMonth()+1) + '/' + when.getDate() + ' ' + String(when.getHours()).padStart(2,'0') + ':' + String(when.getMinutes()).padStart(2,'0') + ')' : '') + '</span>' +
+      (r.miss.length ? ' <span class="bad">' + r.miss.join(', ') + '는 이전 값 유지</span>' : ''));
+    render();
+  } catch (err) {
+    const c = err && err.code;
+    const msg = c === 'server_not_connected' ? 'Gmail 커넥터가 연결돼 있지 않습니다. claude.ai 설정의 커넥터에서 Gmail을 추가해주세요.'
+      : c === 'needs_reauth' ? 'Gmail 연결이 만료됐습니다. claude.ai 설정의 커넥터에서 Gmail을 다시 연결해주세요.'
+      : c === 'not_in_manifest' || c === 'approval_required' || c === 'consent_required' ? '이 페이지의 Gmail 접근이 허용되지 않았습니다. "Gmail에서 가져오기"를 눌러 허용해주세요.'
+      : c === 'selection_required' ? '연결된 Gmail 계정이 여러 개입니다. 사용할 계정을 선택해주세요.'
+      : c === 'blocked_by_policy' ? '조직 정책으로 Gmail 접근이 막혀 있습니다.'
+      : c === 'tool_error' ? 'Gmail 조회 오류: ' + (err.message || '')
+      : c === 'server_unavailable' ? 'Gmail이 잠시 응답하지 않습니다. 잠시 후 "Gmail에서 가져오기"를 눌러주세요.'
+      : (err && err.message) || 'Gmail에서 평가표를 가져오지 못했습니다.';
+    setStatus('<span class="bad">' + msg + '</span>');
+  } finally { gmailBusy = false; }
+}
+$('gmailBtn').addEventListener('click', e => { e.preventDefault(); gmailRefresh(true); });
+function autoGmail(){
+  let prev = TODAY - DAY; while (!isBiz(prev)) prev -= DAY;
+  if (parseDate(CURVE_DATE) < prev || CURVE_SRC === 'default') setTimeout(() => gmailRefresh(false), 300);
+  else if (window.claude && window.claude.use) window.claude.use('mcp').then(m => { if (m) $('gmailBtn').classList.remove('hidden'); });
+}
+
+/* external hosting: load the latest curve.json published next to this page */
+(async function loadCurveFile(){
+  try {
+    const res = await fetch('curve.json?v=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) return;
+    const v = await res.json();
+    if (!v || !v.data || !v.data.CU || !v.date) return;
+    if (CURVE_SRC !== 'default' && v.date < CURVE_DATE) return;
+    CURVE = Object.assign({}, CURVE_BASE, v.data); CURVE_DATE = v.date; CURVE_SRC = 'file';
+    render();
+  } catch (e) {}
+})();
+
+/* shared curve: editors publish the evaluation to the artifact's db, every viewer reads it */
+let DB = null, CAN_EDIT = false;
+const SHARED_DOC = 'curve/latest';
+function applyShared(snap){
+  if (!snap || !snap.exists) return false;
+  const v = snap.data();
+  if (!v || !v.data || !v.data.CU || !v.date) return false;
+  if (CURVE_SRC !== 'default' && v.date < CURVE_DATE && CAN_EDIT) return false;
+  CURVE = Object.assign({}, CURVE_BASE, v.data); CURVE_DATE = v.date; CURVE_SRC = 'shared';
+  render();
+  return true;
+}
+async function pushShared(date, data){
+  if (!DB || !CAN_EDIT) return;
+  try {
+    await DB.doc(SHARED_DOC).set({ date, data, updatedAt: Date.now() });
+    $('evalStatus').insertAdjacentHTML('beforeend', ' <span class="ok">공유 링크 화면에도 반영됨</span>');
+  } catch (e) {
+    $('evalStatus').insertAdjacentHTML('beforeend', ' <span class="bad">공유 저장 실패' + (e && e.code ? ' (' + e.code + ')' : '') + '</span>');
+  }
+}
+const isAdminView = () => location.hash === '#admin' && (CAN_EDIT || !(window.claude && window.claude.use));
+function syncAdmin(){ document.querySelector('.upl').classList.toggle('hidden', !isAdminView()); }
+window.addEventListener('hashchange', syncAdmin);
+syncAdmin();
+if (window.claude && window.claude.use){
+  document.querySelector('.upl').classList.add('hidden');
+  (async () => {
+    const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+    DB = db;
+    CAN_EDIT = user ? await user.canEdit() : false;
+    syncAdmin();
+    if (DB){
+      try { applyShared(await DB.doc(SHARED_DOC).get()); } catch (e) {}
+      DB.doc(SHARED_DOC).onSnapshot(snap => applyShared(snap), () => {});
+    }
+    if (CAN_EDIT){
+      autoGmail();
+      setInterval(() => {
+        if (document.hidden) return;
+        let prev = Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()) - DAY; while (!isBiz(prev)) prev -= DAY;
+        if (parseDate(CURVE_DATE) < prev) gmailRefresh(false);
+      }, 30*60*1000);
+    }
+  })();
+}
+
+$('inputs').addEventListener('input', render);
+$('inputs').addEventListener('change', render);
+render();
+</script>
+</body>
+</html>
