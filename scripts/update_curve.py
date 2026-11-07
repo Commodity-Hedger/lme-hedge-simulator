@@ -30,7 +30,7 @@ def parse_sheet(ws):
     for i, r in enumerate(rows):
         for j, v in enumerate(r):
             nxt = r[j + 1] if j + 1 < len(r) else None
-            if not isinstance(nxt, (int, float)) or isinstance(nxt, bool): continue
+            if not isinstance(nxt, (int, float)) or isinstance(nxt, bool) or nxt <= 0: continue  # 0 = 빈 칸
             if i < month_row:
                 if v == "Cash" and cash: pts[cash] = nxt
                 elif v == "3Months" and m3: pts[m3] = nxt
