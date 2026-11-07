@@ -34,6 +34,9 @@ body{margin:0;background:var(--bg);color:var(--ink);
 header{margin-bottom:22px}
 h1{font-size:1.7rem;font-weight:600;margin:0 0 4px;letter-spacing:-0.01em}
 header p{margin:0;color:var(--muted);max-width:66ch}
+.htop{display:flex;justify-content:space-between;align-items:flex-start;gap:8px 16px;flex-wrap:wrap;margin-bottom:6px}
+.blog{font-size:.85rem;color:var(--steel);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--surface);white-space:nowrap}
+.blog:hover{border-color:var(--steel)}
 .layout{display:grid;grid-template-columns:minmax(310px,380px) 1fr;gap:24px;align-items:start}
 @media (max-width:900px){.layout{grid-template-columns:1fr}}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px}
@@ -146,7 +149,10 @@ input[type=number]::placeholder{color:#8A7A3A}
 <body>
 <div class="wrap">
   <header>
-    <h1>비철금속(LME) 헤지 시뮬레이터</h1>
+    <div class="htop">
+      <h1>비철금속(LME) 헤지 시뮬레이터</h1>
+      <a class="blog" href="https://commodity.tistory.com" target="_blank" rel="noopener">commodity.tistory.com ↗</a>
+    </div>
     <p>실물 가격이 Cash, 3M 또는 월평균으로 먼저 고정되고 반대쪽 실물 거래가 특정 월 평균가로 정해지는 경우, 헤지 패키지를 걸었을 때 무엇이 남고 그 사이 현금이 얼마나 필요한지 보여줍니다.</p>
   </header>
 
